@@ -1,0 +1,20 @@
+[app]
+name = "freshrss"
+version = "0.1.0"
+description = "FreshRSS — a self-hosted RSS feed aggregator. OpenHost zone owner is auto-logged in as admin via X-WebAuth-User; first visit drives FreshRSS's auto-install wizard pinned to the HTTP-auth method."
+authors = ["Andrew Laack <andrew@laack.co>"]
+
+[runtime.container]
+image = "Dockerfile"
+port = 8080
+
+[routing]
+health_check = "/healthz"
+
+[resources]
+memory_mb = 512
+cpu_millicores = 500
+
+[data]
+app_data = true
+app_temp_data = true
