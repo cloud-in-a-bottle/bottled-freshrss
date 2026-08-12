@@ -1,6 +1,6 @@
-# openhost-freshrss
+# bottled-freshrss
 
-[FreshRSS](https://www.freshrss.org/) packaged for OpenHost with
+[FreshRSS](https://www.freshrss.org/) packaged for Cloud in a Bottle with
 **one-click SSO** for the zone owner.
 
 ## What it is
@@ -12,7 +12,7 @@ clients (Fluent Reader, FocusReader, Read You, etc.).
 
 ## How SSO works (Pattern A — trusted header)
 
-  1. OpenHost router validates the visitor's `zone_auth` cookie and
+  1. Cloud in a Bottle router validates the visitor's `zone_auth` cookie and
      stamps `X-OpenHost-Is-Owner: true` on owner requests.
   2. The bundled `auth_proxy.py` reads that header and re-stamps
      the request as `X-WebAuth-User: admin` before forwarding to
@@ -22,7 +22,7 @@ clients (Fluent Reader, FocusReader, Read You, etc.).
      `$_SERVER['HTTP_X_WEBAUTH_USER']` on every request as the
      authenticated user.
 
-Anonymous visitors that bypass OpenHost's auth get nothing — the
+Anonymous visitors that bypass Cloud in a Bottle's auth get nothing — the
 router 302's them to `/login`, never reaching the auth-proxy.
 
 Defence in depth: the auth-proxy strips any client-supplied
