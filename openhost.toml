@@ -1,7 +1,7 @@
 [app]
 name = "freshrss"
 version = "0.1.0"
-description = "FreshRSS — a self-hosted RSS feed aggregator. OpenHost zone owner is auto-logged in as admin via X-WebAuth-User; first visit drives FreshRSS's auto-install wizard pinned to the HTTP-auth method."
+description = "FreshRSS — a self-hosted RSS feed aggregator. Cloud in a Bottle zone owner is auto-logged in as admin via X-WebAuth-User; first visit drives FreshRSS's auto-install wizard pinned to the HTTP-auth method."
 authors = ["Andrew Laack <andrew@laack.co>"]
 
 [runtime.container]
