@@ -3,7 +3,9 @@
 FROM freshrss/freshrss:1.30.0-alpine
 
 USER root
-RUN apk add --no-cache bash python3 ca-certificates
+RUN apk add --no-cache bash python3 ca-certificates && \
+    find /etc/php* -type f -name php.ini -exec \
+        sed -i -E 's/^memory_limit[[:space:]]*=.*/memory_limit = 384M/' {} +
 
 COPY auth_proxy.py /opt/auth_proxy.py
 COPY start.sh /opt/start.sh

@@ -97,6 +97,11 @@ if [ "$UPSTREAM_READY" != true ]; then
     exit 1
 fi
 
+# create-user.php does not make CLI-created users administrators. Run this as
+# Apache's user so the rewritten configuration retains the expected ownership.
+su apache -s /bin/sh -c \
+    "DATA_PATH='$DATA_PATH' php ./cli/reconfigure-user.php --user admin --key is_admin --set --value true"
+
 # Launch the OpenHost auth-proxy on :8080.  Stamps X-WebAuth-User
 # on owner requests, passes everything else through unchanged.
 echo "[start] launching auth_proxy.py on 0.0.0.0:8080..." >&2

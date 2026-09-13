@@ -13,6 +13,7 @@ def test_manifest_exposes_only_health_check():
     assert manifest["runtime"]["container"]["port"] == 8080
     assert manifest["routing"]["health_check"] == "/healthz"
     assert manifest["routing"]["public_paths"] == ["/healthz"]
+    assert manifest["resources"]["memory_mb"] == 512
     assert manifest["data"] == {"app_data": True}
 
 
@@ -27,6 +28,7 @@ def test_image_is_pinned_to_a_release():
     dockerfile = (ROOT / "Dockerfile").read_text()
 
     assert "FROM freshrss/freshrss:1.30.0-alpine" in dockerfile
+    assert "memory_limit = 384M" in dockerfile
     assert 'CMD ["sh", "-c"' in dockerfile
     assert "exec httpd -D FOREGROUND" in dockerfile
     assert ":latest" not in dockerfile
@@ -37,3 +39,4 @@ def test_owner_creation_explicitly_disables_default_feeds():
     entrypoint = (ROOT / "start.sh").read_text()
 
     assert "--no-default-feeds" in entrypoint
+    assert "reconfigure-user.php --user admin --key is_admin --set --value true" in entrypoint
