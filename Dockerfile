@@ -15,3 +15,4 @@ RUN chmod 0755 /opt/auth_proxy.py /opt/start.sh
 EXPOSE 8080
 
 ENTRYPOINT ["/opt/start.sh"]
+CMD ["sh", "-c", "([ -z \"$CRON_MIN\" ] || crond -d 6) && exec httpd -D FOREGROUND"]

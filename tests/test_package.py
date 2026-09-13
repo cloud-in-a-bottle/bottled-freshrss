@@ -27,6 +27,8 @@ def test_image_is_pinned_to_a_release():
     dockerfile = (ROOT / "Dockerfile").read_text()
 
     assert "FROM freshrss/freshrss:1.30.0-alpine" in dockerfile
+    assert 'CMD ["sh", "-c"' in dockerfile
+    assert "exec httpd -D FOREGROUND" in dockerfile
     assert ":latest" not in dockerfile
     assert ":edge" not in dockerfile
 
