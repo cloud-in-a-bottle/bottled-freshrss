@@ -1,5 +1,5 @@
 #!/bin/bash
-# OpenHost entrypoint for FreshRSS.
+# Cloud in a Bottle entrypoint for FreshRSS.
 #
 # Topology:
 #
@@ -14,26 +14,14 @@
 
 set -euo pipefail
 
-# Repoint FreshRSS' data dir at OpenHost's persistent volume so it
-# survives reload + redeploy.  FreshRSS reads /var/www/FreshRSS/data
-# by default; we'd rather store everything under
-# $OPENHOST_APP_DATA_DIR for consistency with other apps.
-DATA_DIR="${OPENHOST_APP_DATA_DIR:-/var/www/FreshRSS/data}"
-mkdir -p "${DATA_DIR}"
+: "${BOTTLE_APP_DATA_DIR:?BOTTLE_APP_DATA_DIR is required}"
+: "${BOTTLE_APP_NAME:?BOTTLE_APP_NAME is required}"
+: "${BOTTLE_ZONE_DOMAIN:?BOTTLE_ZONE_DOMAIN is required}"
 
-# Replace FreshRSS' built-in data dir with a symlink to our
-# persistent location BEFORE the upstream entrypoint runs.
-# Otherwise it'll write applied_migrations.txt + config.php to
-# the ephemeral container path.
-if [ -d /var/www/FreshRSS/data ] && [ ! -L /var/www/FreshRSS/data ]; then
-    if [ -n "$(ls -A /var/www/FreshRSS/data 2>/dev/null || true)" ]; then
-        cp -a /var/www/FreshRSS/data/. "${DATA_DIR}/" || true
-    fi
-    rm -rf /var/www/FreshRSS/data
-fi
-if [ ! -L /var/www/FreshRSS/data ]; then
-    ln -s "${DATA_DIR}" /var/www/FreshRSS/data
-fi
+# DATA_PATH is FreshRSS' supported override for all mutable state, including
+# its SQLite database, user configuration, and extension data.
+export DATA_PATH="${DATA_PATH:-$BOTTLE_APP_DATA_DIR/data}"
+mkdir -p "$DATA_PATH"
 
 # Apache shimmed to bind only on the auth-proxy's upstream port
 # (loopback).  127.0.0.1:8800 keeps it unreachable from outside
@@ -45,9 +33,9 @@ export LISTEN="127.0.0.1:8800"
 # client IP from X-Forwarded-For.
 export TRUSTED_PROXY="127.0.0.1/32"
 
-# Schedule a feed refresh every 15 minutes.  CRON_MIN goes into
+# Schedule a feed refresh twice an hour. CRON_MIN goes into
 # the upstream image's crontab via entrypoint.sh.
-export CRON_MIN="${CRON_MIN:-*/15}"
+export CRON_MIN="${CRON_MIN:-7,37}"
 
 # FRESHRSS_INSTALL: the upstream entrypoint passes this as args
 # to ``cli/do-install.php`` on every boot.  do-install bails with
@@ -63,12 +51,16 @@ export CRON_MIN="${CRON_MIN:-*/15}"
 #   * --default-user admin    — must match what auth_proxy.py stamps
 #                               (AUTH_PROXY_OWNER_USERNAME).
 #   * --db-type sqlite        — zero-config DB.
-#   * --disable-update true   — Docker installs upgrade via image
+#   * --disable-update true   - Docker installs upgrade via image
 #                               pulls, not in-app self-update.
-#   * --api-enabled true      — exposes the FreshRSS native + Fever
+#   * --api-enabled true      - exposes the FreshRSS native + Fever
 #                               + Google Reader APIs for third-party
 #                               clients.  Mobile readers use this.
-export FRESHRSS_INSTALL="--default-user admin --auth-type http_auth --db-type sqlite --language en --title 'FreshRSS-on-OpenHost' --api-enabled true --disable-update true"
+export FRESHRSS_INSTALL="--default-user admin --auth-type http_auth --base-url https://${BOTTLE_APP_NAME}.${BOTTLE_ZONE_DOMAIN} --db-type sqlite --language en --title FreshRSS --api-enabled true --disable-update true"
+
+# Pre-create the owner account without FreshRSS' bundled onboarding feed. The
+# empty opml.default.xml also keeps HTTP-auth auto-registered users feed-free.
+export FRESHRSS_USER="--user admin --language en --no-default-feeds"
 
 # Launch the auth-proxy in the foreground; background the
 # upstream entrypoint.
@@ -76,18 +68,18 @@ echo "[start] launching upstream FreshRSS entrypoint..." >&2
 (
     # Hand control to the upstream image's standard boot — it
     # handles apache config, install, cron + finally exec's
-    # apache2.  We pass the apache CMD verbatim from the upstream
-    # Dockerfile.
-    cd /var/www/FreshRSS && exec /var/www/FreshRSS/Docker/entrypoint.sh \
-        sh -c '([ -z "$CRON_MIN" ] || cron) && . /etc/apache2/envvars && exec apache2 -D FOREGROUND'
+    # Apache. The inherited FreshRSS CMD is forwarded unchanged.
+    cd /var/www/FreshRSS && exec /var/www/FreshRSS/Docker/entrypoint.sh "$@"
 ) &
 UPSTREAM_PID=$!
 
 # Wait for apache to come up on the loopback shim port (max 90s).
 echo "[start] waiting for apache on 127.0.0.1:8800..." >&2
+UPSTREAM_READY=false
 for _ in $(seq 1 90); do
     if (echo >/dev/tcp/127.0.0.1/8800) 2>/dev/null; then
         echo "[start] apache reachable on 127.0.0.1:8800" >&2
+        UPSTREAM_READY=true
         break
     fi
     if ! kill -0 "$UPSTREAM_PID" 2>/dev/null; then
@@ -97,6 +89,18 @@ for _ in $(seq 1 90); do
     fi
     sleep 1
 done
+
+if [ "$UPSTREAM_READY" != true ]; then
+    echo "[start] apache did not become ready within 90 seconds" >&2
+    kill -TERM "$UPSTREAM_PID" 2>/dev/null || true
+    wait "$UPSTREAM_PID" || true
+    exit 1
+fi
+
+# create-user.php does not make CLI-created users administrators. Run this as
+# Apache's user so the rewritten configuration retains the expected ownership.
+su apache -s /bin/sh -c \
+    "DATA_PATH='$DATA_PATH' php ./cli/reconfigure-user.php --user admin --key is_admin --set --value true"
 
 # Launch the OpenHost auth-proxy on :8080.  Stamps X-WebAuth-User
 # on owner requests, passes everything else through unchanged.

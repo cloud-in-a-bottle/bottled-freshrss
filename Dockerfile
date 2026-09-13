@@ -1,30 +1,20 @@
-# Multi-stage: pick up upstream FreshRSS image as the base and layer
-# in the OpenHost auth-proxy + bootstrap wiring on top.
-FROM freshrss/freshrss:latest
+# Layer Cloud in a Bottle authentication and bootstrap wiring onto a reviewed
+# FreshRSS release. Dependabot can propose deliberate version updates.
+FROM freshrss/freshrss:1.30.0-alpine
 
-# python3 + bash for the auth-proxy and start.sh.  busybox-static for
-# a stable `sed`/`sleep` in start.sh that survives any future
-# upstream-image alpine/debian shuffle.
 USER root
-RUN set -eux; \
-    if command -v apt-get >/dev/null 2>&1; then \
-        apt-get update; \
-        apt-get install -y --no-install-recommends \
-            python3 \
-            ca-certificates; \
-        rm -rf /var/lib/apt/lists/*; \
-    elif command -v apk >/dev/null 2>&1; then \
-        apk add --no-cache python3 ca-certificates; \
-    else \
-        echo "unknown base image package manager"; exit 1; \
-    fi
+RUN apk add --no-cache bash python3 ca-certificates && \
+    find /etc/php* -type f -name php.ini -exec \
+        sed -i -E 's/^memory_limit[[:space:]]*=.*/memory_limit = 384M/' {} +
 
 COPY auth_proxy.py /opt/auth_proxy.py
 COPY start.sh /opt/start.sh
+COPY opml.default.xml /var/www/FreshRSS/opml.default.xml
 RUN chmod 0755 /opt/auth_proxy.py /opt/start.sh
 
-# Healthcheck endpoint the auth-proxy serves locally so OpenHost's
+# Healthcheck endpoint the auth-proxy serves locally so Cloud in a Bottle's
 # probe is decoupled from FreshRSS' cold-start time.
 EXPOSE 8080
 
 ENTRYPOINT ["/opt/start.sh"]
+CMD ["sh", "-c", "([ -z \"$CRON_MIN\" ] || crond -d 6) && exec httpd -D FOREGROUND"]

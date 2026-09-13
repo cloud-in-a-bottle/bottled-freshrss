@@ -1,7 +1,7 @@
-# bottled-freshrss
+# FreshRSS for Cloud in a Bottle
 
 [FreshRSS](https://www.freshrss.org/) packaged for Cloud in a Bottle with
-**one-click SSO** for the zone owner.
+single sign-on for the instance owner.
 
 ## What it is
 
@@ -10,56 +10,57 @@ feeds, mobile-friendly, supports OPML import/export, Fever API,
 Google Reader API, and the FreshRSS native API for third-party
 clients (Fluent Reader, FocusReader, Read You, etc.).
 
-## How SSO works (Pattern A — trusted header)
+## Features
 
-  1. Cloud in a Bottle router validates the visitor's `zone_auth` cookie and
-     stamps `X-OpenHost-Is-Owner: true` on owner requests.
-  2. The bundled `auth_proxy.py` reads that header and re-stamps
-     the request as `X-WebAuth-User: admin` before forwarding to
-     FreshRSS' apache backend.
-  3. FreshRSS' install bootstrap runs `cli/do-install.php` with
-     `--auth-type http_auth`, which makes the app read
-     `$_SERVER['HTTP_X_WEBAUTH_USER']` on every request as the
-     authenticated user.
+- Official FreshRSS `1.30.0-alpine` image pinned for reproducible builds.
+- SQLite configuration, users, feeds, and extension data in permanent storage.
+- Feed refreshes at minutes 7 and 37 of every hour.
+- Empty feed list for every newly created user.
+- Native, Fever, and Google Reader compatible APIs.
 
-Anonymous visitors that bypass Cloud in a Bottle's auth get nothing — the
-router 302's them to `/login`, never reaching the auth-proxy.
+## How SSO works
 
-Defence in depth: the auth-proxy strips any client-supplied
+1. The Cloud in a Bottle router authenticates the visitor and stamps
+   `X-OpenHost-Is-Owner: true` on owner requests.
+2. `auth_proxy.py` translates that trusted signal to
+   `X-WebAuth-User: admin` before forwarding to loopback-only Apache.
+3. FreshRSS uses `http_auth`, so the owner arrives as the `admin` user without
+   another password prompt.
+
+Anonymous visitors are redirected to the instance login before reaching the
+container. Only the static `/healthz` response is public.
+
+Defense in depth: the auth proxy strips any client-supplied
 `X-OpenHost-*` / `X-WebAuth-User` / `Remote-User` headers before
 forwarding, so a hostile actor who somehow bypassed the router
 cannot inject a fake admin identity.
 
 ## Data
 
-  * `/data/app_data/freshrss/` — FreshRSS' SQLite DB, user config,
-    extensions, OPML state.  Symlinked into the container as
-    `/var/www/FreshRSS/data`.
-  * `/data/app_temp_data/freshrss/` — apache scratch space.
+- `$BOTTLE_APP_DATA_DIR/data` contains FreshRSS's SQLite database, user
+  configuration, extension data, and OPML state.
 
 No plaintext passwords are written to disk.  The "admin" user
 created by the install bootstrap has no usable password (FreshRSS
 keeps it empty when auth_type is `http_auth`), so nothing on the
 file-browser-readable volume is a credential.
 
-## Manifest
-
-  * Port 8080 (auth-proxy)
-  * Apache shimmed to 127.0.0.1:8800 via the `LISTEN` env var
-  * Cron-driven feed refresh every 15 minutes (CRON_MIN override
-    via container env)
-
-## Verifying
+## Deploy
 
 ```sh
-# Owner SSO — should land on the FreshRSS dashboard without any
-# login form.
-curl -sk -H "Authorization: Bearer $OPENHOST_TOKEN" \
-    -L "https://freshrss.${OPENHOST_ZONE_DOMAIN}/" \
-    -o /tmp/r.html -w 'HTTP=%{http_code}\nFINAL=%{url_effective}\n'
-grep -oE '<title>[^<]+</title>' /tmp/r.html
+bottle app deploy https://github.com/cloud-in-a-bottle/bottled-freshrss --wait
+```
 
-# Anonymous — should redirect to OpenHost /login.
-curl -sk -L "https://freshrss.${OPENHOST_ZONE_DOMAIN}/" \
-    -w 'HTTP=%{http_code}\nFINAL=%{url_effective}\n' -o /dev/null
+The app is available at `https://freshrss.<your-domain>/`.
+
+## Default Feeds
+
+There are none. The package replaces FreshRSS's onboarding OPML with a valid
+empty document and passes `--no-default-feeds` when creating the owner. Add
+subscriptions in the UI or import an OPML file after deployment.
+
+## Development
+
+```sh
+python -m pytest -q
 ```
